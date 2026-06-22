@@ -11,12 +11,15 @@ class TaskBase(BaseModel):
     end_time: Optional[time] = None
     priority: Optional[str] = None
     category: Optional[str] = None
+    completed: bool = False
+    completed_at: Optional[datetime] = None
 
 class TaskCreate(TaskBase):
     schedule_id: uuid.UUID
 
 class TaskUpdate(TaskBase):
     title: Optional[str] = None
+    completed: Optional[bool] = None
 
 class TaskResponse(TaskBase):
     id: uuid.UUID

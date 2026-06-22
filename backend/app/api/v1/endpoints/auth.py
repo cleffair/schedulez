@@ -1,28 +1,37 @@
-from fastapi import APIRouter, Depends
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.schemas.user import UserResponse
 from app.core.security.verifier import TokenVerifier
-from app.api.dependencies import get_token_verifier, security
-from app.schemas.user import User
-from app.schemas.token import TokenPayload
-from app.services.user_service import UserService
+from app.api.deps import get_token_verifier
+from app.services.user_service import sync_user_from_token
+from app.core.security.exceptions import AuthenticationError
 
 router = APIRouter()
+security = HTTPBearer()
 
-@router.post("/sync", response_model=User)
+@router.post("/sync", response_model=UserResponse)
 async def sync_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     verifier: TokenVerifier = Depends(get_token_verifier),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Validates the bearer token and creates the local user profile if missing.
-    Returns the local user profile.
+    Synchronize the authenticated user with the local database.
+    This endpoint validates the token from the frontend and creates
+    the local user profile if it does not already exist.
     """
     token = credentials.credentials
-    payload: TokenPayload = await verifier.verify_token(token)
-    
-    user_model = await UserService.sync_user_from_token(db, payload)
-    return user_model
+    try:
+        payload = await verifier.verify_token(token)
+    except AuthenticationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    user = await sync_user_from_token(db, payload)
+    return user

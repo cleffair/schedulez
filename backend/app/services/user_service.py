@@ -1,20 +1,27 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.token import TokenPayload
-from app.crud.user import user as crud_user
-from app.schemas.user import UserCreate
+from sqlalchemy import select
 from app.models.user import User
+from app.schemas.token import TokenPayload
 
-class UserService:
-    @staticmethod
-    async def sync_user_from_token(db: AsyncSession, payload: TokenPayload) -> User:
-        """
-        Syncs a user from the provided Supabase JWT payload.
-        Creates the user if they do not exist.
-        """
-        user_model = await crud_user.get_by_email(db, email=payload.email)
-        if not user_model:
-            user_model = await crud_user.create(
-                db, 
-                obj_in=UserCreate(email=payload.email, is_active=True)
-            )
-        return user_model
+async def sync_user_from_token(db: AsyncSession, payload: TokenPayload) -> User:
+    """
+    Synchronizes the user profile based on the verified JWT token.
+    If the user doesn't exist locally, creates a new User record.
+    """
+    # Look up user by email
+    query = select(User).where(User.email == payload.email)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        # Create user if it doesn't exist locally
+        # hashed_password is left null as authentication is handled by the external provider
+        user = User(
+            email=payload.email,
+            is_active=True
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        
+    return user
